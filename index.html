@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Data Visualizer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      background: linear-gradient(90deg, #000000 0%, #1a1a1a 100%);
+      padding: 1.5rem 2rem;
+      border-bottom: 2px solid #d4af37;
+      box-shadow: 0 4px 20px rgba(212, 175, 55, 0.3);
+    }
+
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 300;
+      letter-spacing: 3px;
+      background: linear-gradient(135deg, #ffffff 0%, #d4af37 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .container {
+      display: flex;
+      flex: 1;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 400px;
+      background: #000000;
+      border-right: 2px solid #d4af37;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 4px 0 20px rgba(212, 175, 55, 0.2);
+    }
+
+    .upload-section {
+      padding: 2rem;
+      border-bottom: 1px solid #333;
+      background: linear-gradient(180deg, #0a0a0a 0%, #000000 100%);
+    }
+
+    .upload-area {
+      border: 2px dashed #d4af37;
+      padding: 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: #0a0a0a;
+      clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    }
+
+    .upload-area:hover {
+      background: #1a1a1a;
+      border-color: #ffd700;
+      box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+    }
+
+    .upload-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      color: #d4af37;
+    }
+
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      background: #000000;
+    }
+
+    .message {
+      margin-bottom: 1.5rem;
+      display: flex;
+      gap: 1rem;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .message-content {
+      flex: 1;
+      padding: 1rem 1.5rem;
+      border-radius: 0;
+      clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    }
+
+    .user-message .message-content {
+      background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+      border-left: 3px solid #d4af37;
+      margin-left: auto;
+    }
+
+    .ai-message .message-content {
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+      border-left: 3px solid #ffd700;
+    }
+
+    .input-section {
+      padding: 1.5rem;
+      background: #000000;
+      border-top: 1px solid #333;
+    }
+
+    .input-container {
+      display: flex;
+      gap: 1rem;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      padding: 1rem 1.5rem;
+      background: #1a1a1a;
+      border: 2px solid #333;
+      color: #ffffff;
+      font-size: 1rem;
+      outline: none;
+      transition: all 0.3s;
+      clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    }
+
+    input[type="text"]:focus {
+      border-color: #d4af37;
+      box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+    }
+
+    button {
+      padding: 1rem 2rem;
+      background: linear-gradient(135deg, #d4af37 0%, #ffd700 100%);
+      color: #000000;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+      letter-spacing: 1px;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(212, 175, 55, 0.5);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .main-content {
+      flex: 1;
+      padding: 2rem;
+      overflow-y: auto;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 50%, #0a0a0a 100%);
+    }
+
+    .chart-container {
+      background: #000000;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 30px rgba(212, 175, 55, 0.1);
+      border: 1px solid #333;
+      clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+    }
+
+    .chart-title {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      color: #d4af37;
+      font-weight: 300;
+      letter-spacing: 2px;
+      border-bottom: 2px solid #d4af37;
+      padding-bottom: 0.5rem;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #333;
+      border-top-color: #d4af37;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .file-info {
+      background: #1a1a1a;
+      padding: 1rem;
+      margin-top: 1rem;
+      border-left: 3px solid #d4af37;
+      clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    }
+
+    .file-name {
+      color: #d4af37;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .welcome-message {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: #999;
+    }
+
+    .welcome-message h2 {
+      font-size: 2rem;
+      color: #d4af37;
+      margin-bottom: 1rem;
+      font-weight: 300;
+      letter-spacing: 2px;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #0a0a0a;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #d4af37;
+      clip-path: polygon(0 4px, 100% 4px, 100% calc(100% - 4px), 0 calc(100% - 4px));
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #ffd700;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>AI DATA VISUALIZER</h1>
+  </div>
+
+  <div class="container">
+    <div class="sidebar">
+      <div class="upload-section">
+        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+          <div class="upload-icon">📊</div>
+          <div>Drop files or click to upload</div>
+          <small style="color: #999; display: block; margin-top: 0.5rem;">
+            Supports: JSON, YAML, CSV, XLSX, PDF
+          </small>
+        </div>
+        <input type="file" id="fileInput" accept=".json,.yaml,.yml,.csv,.xlsx,.xls,.pdf" multiple>
+        <div id="fileInfo"></div>
+      </div>
+
+      <div class="chat-area" id="chatArea"></div>
+
+      <div class="input-section">
+        <div class="input-container">
+          <input type="text" id="userInput" placeholder="Ask AI to visualize your data..." onkeypress="if(event.key==='Enter') sendMessage()">
+          <button onclick="sendMessage()" id="sendBtn">SEND</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content" id="mainContent">
+      <div class="welcome-message">
+        <h2>WELCOME TO AI DATA VISUALIZER</h2>
+        <p>Upload your data files and ask AI to create stunning visualizations</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let uploadedFiles = [];
+    let fileContents = {};
+    let chartInstances = [];
+
+    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+
+    async function handleFileUpload(e) {
+      const files = Array.from(e.target.files);
+      uploadedFiles = files;
+      
+      const fileInfoDiv = document.getElementById('fileInfo');
+      fileInfoDiv.innerHTML = '';
+
+      for (const file of files) {
+        const info = document.createElement('div');
+        info.className = 'file-info';
+        info.innerHTML = `<div class="file-name">${file.name}</div><small>${(file.size / 1024).toFixed(2)} KB</small>`;
+        fileInfoDiv.appendChild(info);
+
+        try {
+          const content = await readFile(file);
+          fileContents[file.name] = content;
+        } catch (err) {
+          console.error('Error reading file:', err);
+        }
+      }
+
+      addMessage('ai', `I've received ${files.length} file(s). Ask me to analyze or visualize the data!`);
+    }
+
+    async function readFile(file) {
+      const ext = file.name.split('.').pop().toLowerCase();
+
+      if (ext === 'csv') {
+        const text = await file.text();
+        return new Promise((resolve) => {
+          Papa.parse(text, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            complete: (results) => resolve(results.data)
+          });
+        });
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer);
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        return XLSX.utils.sheet_to_json(ws);
+      } else if (ext === 'json') {
+        const text = await file.text();
+        return JSON.parse(text);
+      } else if (ext === 'yaml' || ext === 'yml') {
+        return await file.text();
+      } else if (ext === 'pdf') {
+        return await file.arrayBuffer();
+      }
+    }
+
+    function addMessage(type, text) {
+      const chatArea = document.getElementById('chatArea');
+      const msg = document.createElement('div');
+      msg.className = `message ${type}-message`;
+      msg.innerHTML = `<div class="message-content">${text}</div>`;
+      chatArea.appendChild(msg);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('userInput');
+      const message = input.value.trim();
+      if (!message) return;
+
+      addMessage('user', message);
+      input.value = '';
+
+      const sendBtn = document.getElementById('sendBtn');
+      sendBtn.disabled = true;
+      sendBtn.innerHTML = '<span class="loading"></span>';
+
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 4000,
+            messages: [{
+              role: 'user',
+              content: `You are a data visualization expert. The user has uploaded files with the following data:\n\n${JSON.stringify(fileContents, null, 2)}\n\nUser request: ${message}\n\nRespond with a JSON object containing:\n1. "explanation": Brief explanation of the visualization\n2. "charts": Array of chart configurations, each with:\n   - "type": chart type (bar, line, pie, doughnut, radar, polarArea)\n   - "title": chart title\n   - "data": chart data object with labels and datasets\n   - "options": chart options object\n\nRespond ONLY with valid JSON, no markdown or extra text.`
+            }]
+          })
+        });
+
+        const data = await response.json();
+        const text = data.content.map(item => item.text || '').join('').trim();
+        const cleanText = text.replace(/```json|```/g, '').trim();
+        const result = JSON.parse(cleanText);
+
+        addMessage('ai', result.explanation);
+        renderCharts(result.charts);
+
+      } catch (err) {
+        console.error('Error:', err);
+        addMessage('ai', 'Sorry, I encountered an error processing your request. Please try again.');
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = 'SEND';
+      }
+    }
+
+    function renderCharts(charts) {
+      const mainContent = document.getElementById('mainContent');
+      mainContent.innerHTML = '';
+
+      chartInstances.forEach(chart => chart.destroy());
+      chartInstances = [];
+
+      charts.forEach((chartConfig, idx) => {
+        const container = document.createElement('div');
+        container.className = 'chart-container';
+        
+        const title = document.createElement('div');
+        title.className = 'chart-title';
+        title.textContent = chartConfig.title;
+        container.appendChild(title);
+
+        const canvas = document.createElement('canvas');
+        canvas.id = `chart-${idx}`;
+        container.appendChild(canvas);
+        mainContent.appendChild(container);
+
+        const ctx = canvas.getContext('2d');
+        const chart = new Chart(ctx, {
+          type: chartConfig.type,
+          data: chartConfig.data,
+          options: {
+            ...chartConfig.options,
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              ...chartConfig.options?.plugins,
+              legend: {
+                labels: {
+                  color: '#ffffff',
+                  font: { size: 12 }
+                }
+              }
+            },
+            scales: chartConfig.type !== 'pie' && chartConfig.type !== 'doughnut' ? {
+              x: {
+                ticks: { color: '#999' },
+                grid: { color: '#333' }
+              },
+              y: {
+                ticks: { color: '#999' },
+                grid: { color: '#333' }
+              }
+            } : undefined
+          }
+        });
+        chartInstances.push(chart);
+      });
+    }
+  </script>
+</body>
+</html>

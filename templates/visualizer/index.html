@@ -1,0 +1,335 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Data Visualizer - Django</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+  <div class="header">
+    <h1>AI DATA VISUALIZER</h1>
+    <div class="header-actions">
+      <a href="{% url 'ollama_config' %}" class="config-btn">⚙️ Ollama Config</a>
+      <div class="model-indicator" id="modelIndicator">
+        <span class="status-dot"></span>
+        <span id="activeModelName">No Model Active</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="sidebar">
+      <div class="upload-section">
+        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+          <div class="upload-icon">📊</div>
+          <div>Drop files or click to upload</div>
+          <small style="color: #999; display: block; margin-top: 0.5rem;">
+            Supports: JSON, YAML, CSV, XLSX, PDF
+          </small>
+        </div>
+        <input type="file" id="fileInput" accept=".json,.yaml,.yml,.csv,.xlsx,.xls,.pdf" multiple>
+        <div id="fileInfo"></div>
+      </div>
+
+      <div class="chat-area" id="chatArea"></div>
+
+      <div class="input-section">
+        <div class="input-container">
+          <input type="text" id="userInput" placeholder="Ask AI to visualize your data..." onkeypress="if(event.key==='Enter') sendMessage()">
+          <button onclick="sendMessage()" id="sendBtn">SEND</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content" id="mainContent">
+      <div class="welcome-message">
+        <h2>WELCOME TO AI DATA VISUALIZER</h2>
+        <p>Upload your data files and ask AI to create stunning visualizations</p>
+        <div class="feature-grid">
+          <div class="feature-card">
+            <div class="feature-icon">🤖</div>
+            <h3>Ollama Integration</h3>
+            <p>Local LLM processing with auto-detection</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3>Smart Visualizations</h3>
+            <p>AI-powered chart generation</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">📁</div>
+            <h3>Multiple Formats</h3>
+            <p>CSV, Excel, JSON, YAML, PDF support</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Configuration
+    const API_BASE = '/api';
+    let sessionId = localStorage.getItem('sessionId') || generateSessionId();
+    let uploadedFileIds = [];
+    let chartInstances = [];
+    let currentJobId = null;
+
+    function generateSessionId() {
+      const id = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('sessionId', id);
+      return id;
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      checkActiveModel();
+      loadConversation();
+      document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+      
+      // Enable drag and drop
+      const uploadArea = document.querySelector('.upload-area');
+      uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = '#ffd700';
+      });
+      uploadArea.addEventListener('dragleave', () => {
+        uploadArea.style.borderColor = '#d4af37';
+      });
+      uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = '#d4af37';
+        const files = e.dataTransfer.files;
+        handleFileUpload({target: {files}});
+      });
+    });
+
+    async function checkActiveModel() {
+      try {
+        const response = await fetch(`${API_BASE}/ollama/active/`);
+        const data = await response.json();
+        
+        if (response.ok) {
+          updateModelIndicator(data.model_name, true);
+        } else {
+          updateModelIndicator('No Model Active', false);
+        }
+      } catch (err) {
+        console.error('Failed to check active model:', err);
+        updateModelIndicator('Connection Error', false);
+      }
+    }
+
+    function updateModelIndicator(modelName, isActive) {
+      const indicator = document.getElementById('modelIndicator');
+      const nameEl = document.getElementById('activeModelName');
+      const dot = indicator.querySelector('.status-dot');
+      
+      nameEl.textContent = modelName;
+      dot.className = isActive ? 'status-dot active' : 'status-dot';
+    }
+
+    async function handleFileUpload(e) {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+
+      const formData = new FormData();
+      files.forEach(file => formData.append('files', file));
+      formData.append('session_id', sessionId);
+
+      try {
+        const response = await fetch(`${API_BASE}/files/`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+        
+        if (response.ok) {
+          displayFileInfo(data.files);
+          uploadedFileIds = data.files.map(f => f.file_id);
+          addMessage('ai', `I've received ${data.files.length} file(s). Ask me to analyze or visualize the data!`);
+        } else {
+          addMessage('ai', 'Sorry, there was an error uploading your files.');
+        }
+      } catch (err) {
+        console.error('Upload error:', err);
+        addMessage('ai', 'Sorry, there was an error uploading your files.');
+      }
+    }
+
+    function displayFileInfo(files) {
+      const fileInfoDiv = document.getElementById('fileInfo');
+      fileInfoDiv.innerHTML = '';
+
+      files.forEach(file => {
+        const info = document.createElement('div');
+        info.className = 'file-info';
+        
+        const sizeKB = (file.file_size / 1024).toFixed(2);
+        const statusIcon = file.parsed ? '✓' : '⚠️';
+        
+        info.innerHTML = `
+          <div class="file-name">${statusIcon} ${file.file_name}</div>
+          <small>${sizeKB} KB - ${file.file_type.toUpperCase()}</small>
+        `;
+        fileInfoDiv.appendChild(info);
+      });
+    }
+
+    function addMessage(type, text, metadata = {}) {
+      const chatArea = document.getElementById('chatArea');
+      const msg = document.createElement('div');
+      msg.className = `message ${type}-message`;
+      
+      let content = `<div class="message-content">${text}`;
+      
+      if (metadata.loading) {
+        content += '<div class="progress-bar"><div class="progress-fill" style="width: 0%"></div></div>';
+        content += '<div class="progress-text">Processing...</div>';
+      }
+      
+      content += '</div>';
+      msg.innerHTML = content;
+      msg.dataset.messageId = metadata.messageId || Date.now();
+      
+      chatArea.appendChild(msg);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      
+      return msg;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('userInput');
+      const message = input.value.trim();
+      if (!message) return;
+
+      addMessage('user', message);
+      input.value = '';
+
+      const sendBtn = document.getElementById('sendBtn');
+      sendBtn.disabled = true;
+      sendBtn.innerHTML = '<span class="loading"></span>';
+
+      const loadingMsg = addMessage('ai', 'Processing your request...', {loading: true});
+
+      try {
+        const response = await fetch(`${API_BASE}/conversations/chat/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: message,
+            session_id: sessionId,
+            file_ids: uploadedFileIds
+          })
+        });
+
+        const data = await response.json();
+        
+        // Remove loading message
+        loadingMsg.remove();
+
+        if (response.ok) {
+          currentJobId = data.job_id;
+          addMessage('ai', data.explanation || data.message.content);
+          
+          if (data.visualizations && data.visualizations.length > 0) {
+            renderVisualizations(data.visualizations);
+          }
+        } else {
+          addMessage('ai', data.error || 'Sorry, I encountered an error processing your request.');
+        }
+
+      } catch (err) {
+        console.error('Error:', err);
+        loadingMsg.remove();
+        addMessage('ai', 'Sorry, I encountered an error processing your request. Please try again.');
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = 'SEND';
+      }
+    }
+
+    function renderVisualizations(visualizations) {
+      const mainContent = document.getElementById('mainContent');
+      mainContent.innerHTML = '';
+
+      chartInstances.forEach(chart => chart.destroy());
+      chartInstances = [];
+
+      visualizations.forEach((viz, idx) => {
+        const container = document.createElement('div');
+        container.className = 'chart-container';
+        
+        const title = document.createElement('div');
+        title.className = 'chart-title';
+        title.textContent = viz.title || viz.chart_config.title;
+        container.appendChild(title);
+
+        const canvas = document.createElement('canvas');
+        canvas.id = `chart-${idx}`;
+        container.appendChild(canvas);
+        mainContent.appendChild(container);
+
+        const ctx = canvas.getContext('2d');
+        const chartConfig = viz.chart_config;
+        
+        const chart = new Chart(ctx, {
+          type: chartConfig.type,
+          data: chartConfig.data,
+          options: {
+            ...chartConfig.options,
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              ...chartConfig.options?.plugins,
+              legend: {
+                labels: {
+                  color: '#ffffff',
+                  font: { size: 12 }
+                }
+              }
+            },
+            scales: chartConfig.type !== 'pie' && chartConfig.type !== 'doughnut' ? {
+              x: {
+                ticks: { color: '#999' },
+                grid: { color: '#333' }
+              },
+              y: {
+                ticks: { color: '#999' },
+                grid: { color: '#333' }
+              }
+            } : undefined
+          }
+        });
+        chartInstances.push(chart);
+      });
+    }
+
+    async function loadConversation() {
+      try {
+        const response = await fetch(`${API_BASE}/conversations/by_session/?session_id=${sessionId}`);
+        if (response.ok) {
+          const data = await response.json();
+          
+          // Load messages
+          data.messages.forEach(msg => {
+            addMessage(msg.message_type, msg.content);
+          });
+
+          // Load visualizations
+          if (data.visualizations && data.visualizations.length > 0) {
+            renderVisualizations(data.visualizations);
+          }
+        }
+      } catch (err) {
+        console.log('No previous conversation found');
+      }
+    }
+  </script>
+</body>
+</html>

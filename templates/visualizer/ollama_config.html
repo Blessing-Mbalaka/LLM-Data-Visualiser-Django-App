@@ -1,0 +1,237 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ollama Configuration</title>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+  <div class="header">
+    <h1>OLLAMA CONFIGURATION</h1>
+    <div class="header-actions">
+      <a href="{% url 'home' %}" class="config-btn">← Back to Visualizer</a>
+    </div>
+  </div>
+
+  <div class="config-container">
+    <div class="config-section">
+      <h2>Available Models</h2>
+      <button onclick="autoDetectModels()" class="primary-btn" id="detectBtn">
+        🔍 Auto-Detect Models
+      </button>
+      <div id="modelsList" class="models-list"></div>
+    </div>
+
+    <div class="config-section">
+      <h2>Pull New Model</h2>
+      <div class="pull-model-form">
+        <input type="text" id="modelNameInput" placeholder="Enter model name (e.g., llama3.2)" />
+        <button onclick="pullModel()" class="primary-btn" id="pullBtn">
+          ⬇️ Pull Model
+        </button>
+      </div>
+      <div id="pullStatus"></div>
+    </div>
+
+    <div class="config-section">
+      <h2>Connection Status</h2>
+      <div id="connectionStatus" class="status-card">
+        <div class="status-indicator">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Checking...</span>
+        </div>
+        <div class="status-details" id="statusDetails"></div>
+      </div>
+    </div>
+
+    <div class="config-section">
+      <h2>Quick Setup Guide</h2>
+      <div class="guide-card">
+        <ol>
+          <li>Install Ollama from <a href="https://ollama.ai" target="_blank">ollama.ai</a></li>
+          <li>Run <code>ollama serve</code> in your terminal</li>
+          <li>Pull a model: <code>ollama pull llama3.2</code></li>
+          <li>Click "Auto-Detect Models" above</li>
+          <li>Select a model to activate it</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      checkConnection();
+      loadModels();
+    });
+
+    async function checkConnection() {
+      const statusDot = document.getElementById('statusDot');
+      const statusText = document.getElementById('statusText');
+      const statusDetails = document.getElementById('statusDetails');
+
+      try {
+        const response = await fetch(`${API_BASE}/health/`);
+        const data = await response.json();
+
+        if (data.ollama_connected) {
+          statusDot.className = 'status-dot active';
+          statusText.textContent = 'Connected';
+          statusDetails.innerHTML = data.active_model 
+            ? `Active Model: <strong>${data.active_model}</strong>`
+            : 'No active model selected';
+        } else {
+          statusDot.className = 'status-dot';
+          statusText.textContent = 'Not Connected';
+          statusDetails.innerHTML = 'Ollama server is not running. Please start Ollama.';
+        }
+      } catch (err) {
+        statusDot.className = 'status-dot';
+        statusText.textContent = 'Connection Error';
+        statusDetails.innerHTML = `Error: ${err.message}`;
+      }
+    }
+
+    async function loadModels() {
+      try {
+        const response = await fetch(`${API_BASE}/ollama/`);
+        const models = await response.json();
+        displayModels(models);
+      } catch (err) {
+        console.error('Failed to load models:', err);
+      }
+    }
+
+    async function autoDetectModels() {
+      const btn = document.getElementById('detectBtn');
+      btn.disabled = true;
+      btn.textContent = '🔄 Detecting...';
+
+      try {
+        const response = await fetch(`${API_BASE}/ollama/auto_detect/`, {
+          method: 'POST'
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          displayModels(data.models);
+          showNotification('success', data.message);
+          checkConnection();
+        } else {
+          showNotification('error', data.error || 'Failed to detect models');
+        }
+      } catch (err) {
+        showNotification('error', 'Error: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Auto-Detect Models';
+      }
+    }
+
+    function displayModels(models) {
+      const container = document.getElementById('modelsList');
+      
+      if (!models || models.length === 0) {
+        container.innerHTML = '<div class="empty-state">No models found. Click "Auto-Detect Models" to scan for available models.</div>';
+        return;
+      }
+
+      container.innerHTML = models.map(model => `
+        <div class="model-card ${model.is_active ? 'active' : ''} ${!model.is_available ? 'unavailable' : ''}">
+          <div class="model-header">
+            <h3>${model.model_name}</h3>
+            ${model.is_active ? '<span class="badge active-badge">ACTIVE</span>' : ''}
+            ${!model.is_available ? '<span class="badge unavailable-badge">UNAVAILABLE</span>' : ''}
+          </div>
+          <div class="model-details">
+            <div><strong>URL:</strong> ${model.base_url}:${model.port}</div>
+            ${model.parameters.size ? `<div><strong>Size:</strong> ${(model.parameters.size / 1e9).toFixed(2)} GB</div>` : ''}
+          </div>
+          <div class="model-actions">
+            ${!model.is_active && model.is_available ? 
+              `<button onclick="setActiveModel(${model.id})" class="activate-btn">Activate</button>` : 
+              ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function setActiveModel(modelId) {
+      try {
+        const response = await fetch(`${API_BASE}/ollama/${modelId}/set_active/`, {
+          method: 'POST'
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          showNotification('success', `Model ${data.model_name} activated`);
+          loadModels();
+          checkConnection();
+        } else {
+          showNotification('error', data.error || 'Failed to activate model');
+        }
+      } catch (err) {
+        showNotification('error', 'Error: ' + err.message);
+      }
+    }
+
+    async function pullModel() {
+      const input = document.getElementById('modelNameInput');
+      const modelName = input.value.trim();
+      
+      if (!modelName) {
+        showNotification('error', 'Please enter a model name');
+        return;
+      }
+
+      const btn = document.getElementById('pullBtn');
+      const status = document.getElementById('pullStatus');
+      
+      btn.disabled = true;
+      btn.textContent = '⬇️ Pulling...';
+      status.innerHTML = '<div class="loading-msg">This may take several minutes...</div>';
+
+      try {
+        const response = await fetch(`${API_BASE}/ollama/pull_model/`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({model_name: modelName})
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          showNotification('success', data.message);
+          input.value = '';
+          status.innerHTML = '';
+          loadModels();
+        } else {
+          showNotification('error', data.error || 'Failed to pull model');
+          status.innerHTML = '';
+        }
+      } catch (err) {
+        showNotification('error', 'Error: ' + err.message);
+        status.innerHTML = '';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⬇️ Pull Model';
+      }
+    }
+
+    function showNotification(type, message) {
+      const notification = document.createElement('div');
+      notification.className = `notification ${type}`;
+      notification.textContent = message;
+      document.body.appendChild(notification);
+
+      setTimeout(() => notification.classList.add('show'), 10);
+      setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
+    }
+  </script>
+</body>
+</html>

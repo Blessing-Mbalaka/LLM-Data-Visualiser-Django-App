@@ -1,0 +1,19 @@
+{
+  "products": [
+    {"name": "Laptop", "category": "Electronics", "price": 1200, "stock": 45},
+    {"name": "Mouse", "category": "Electronics", "price": 25, "stock": 230},
+    {"name": "Keyboard", "category": "Electronics", "price": 75, "stock": 150},
+    {"name": "Monitor", "category": "Electronics", "price": 350, "stock": 80},
+    {"name": "Desk Chair", "category": "Furniture", "price": 250, "stock": 60},
+    {"name": "Standing Desk", "category": "Furniture", "price": 450, "stock": 35},
+    {"name": "Notebook", "category": "Stationery", "price": 5, "stock": 500},
+    {"name": "Pen Set", "category": "Stationery", "price": 15, "stock": 320},
+    {"name": "Headphones", "category": "Electronics", "price": 150, "stock": 95},
+    {"name": "Webcam", "category": "Electronics", "price": 80, "stock": 120}
+  ],
+  "summary": {
+    "total_products": 10,
+    "total_value": 289750,
+    "categories": 3
+  }
+}
